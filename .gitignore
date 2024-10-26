@@ -1,2 +1,3 @@
 Dockerfile.proxy
 mount.json
+test_dir/

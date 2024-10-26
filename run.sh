@@ -1,18 +1,16 @@
 #!/bin/bash
 
-# Default values
-IMG_NAME="hw-env"
-CONTAINER_NAME="hw_env"
-
-# commands: pull, build, run
+# commands: pull, build, run, rm-container
 # options:
 #   img_name (-i)
 #   container_name (-c)
 #   mount_info (-v)
+#   help (-h)
+#   extra_args (-e)
 # Parse command-line arguments
 while [ $# -gt 0 ]; do
     case $1 in
-        build|run)
+        pull|build|run|rm-container)
             COMMAND=$1
             shift
             ;;
@@ -27,6 +25,11 @@ while [ $# -gt 0 ]; do
         -v|--mount-info)
             MOUNT_INFO=$2
             shift 2
+            ;;
+        -e|--extra-args)
+            shift
+            EXTRA_ARGS="$*"
+            break
             ;;
         *)
             echo "Unknown option: $1"
@@ -47,23 +50,27 @@ fi
 # will be turned into `-v /path/to/dir1:/path/in/container1 -v /path/to/dir2:/path/in/container2`
 # use realpath to get the absolute path
 if [ -n "$MOUNT_INFO" ]; then
-  MOUNT_INFO=$(jq -r 'to_entries | map("-v $(realpath $(pwd)/\(.key)):\(.value)") | join(" ")' $MOUNT_INFO)
+  MOUNT_INFO=$(jq -r 'to_entries | map("-v $(realpath \(.key)):\(.value)") | join(" ")' $MOUNT_INFO)
   MOUNT_INFO=$(eval echo $MOUNT_INFO)
 fi
-
-
 
 # echo the task to be executed
 echo_task() {
   echo "COMMAND: $COMMAND"
-  if [ -n "$IMG_NAME" ]; then
+  if [ "$COMMAND" = "pull" ]; then
     echo "  IMG_NAME: $IMG_NAME"
   fi
-  if [ -n "$CONTAINER_NAME" ]; then
-    echo "  CONTAINER_NAME: $CONTAINER_NAME"
+  if [ "$COMMAND" = "build" ]; then
+    echo "  IMG_NAME: $IMG_NAME"
   fi
-  if [ -n "$MOUNT_INFO" ]; then
+  if [ "$COMMAND" = "run" ]; then
+    echo "  CONTAINER_NAME: $CONTAINER_NAME"
+    echo "  IMG_NAME: $IMG_NAME"
     echo "  MOUNT_INFO: $MOUNT_INFO"
+    echo "  EXTRA_ARGS: $EXTRA_ARGS"
+  fi
+  if [ "$COMMAND" = "rm-container" ]; then
+    echo "  CONTAINER_NAME: $CONTAINER_NAME"
   fi
 }
 
@@ -77,11 +84,31 @@ execute_task() {
   fi
 
   if [ "$COMMAND" = "build" ]; then
+    if [ -z "$IMG_NAME" ]; then
+      echo "Error: IMG_NAME is not specified."
+      exit 1
+    fi
     docker build -t $IMG_NAME .
   fi
 
   if [ "$COMMAND" = "run" ]; then
-    docker run -itd --name $CONTAINER_NAME --network host $MOUNT_INFO $IMG_NAME /bin/bash
+    if [ -z "$CONTAINER_NAME" ]; then
+      echo "Error: CONTAINER_NAME is not specified."
+      exit 1
+    fi
+    if [ -z "$IMG_NAME" ]; then
+      echo "Error: IMG_NAME is not specified."
+      exit 1
+    fi
+    docker run -itd --name $CONTAINER_NAME $MOUNT_INFO $EXTRA_ARGS $IMG_NAME /bin/bash
+  fi
+
+  if [ "$COMMAND" = "rm-container" ]; then
+    if [ -z "$CONTAINER_NAME" ]; then
+      echo "Error: CONTAINER_NAME is not specified."
+      exit 1
+    fi
+    docker rm -f $CONTAINER_NAME
   fi
 }
 
